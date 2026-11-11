@@ -1,45 +1,84 @@
-/**
- * Sample React Native App
- * https://github.com/facebook/react-native
- *
- * @format
- */
-
-import { NewAppScreen } from '@react-native/new-app-screen';
-import { StatusBar, StyleSheet, useColorScheme, View } from 'react-native';
+import { useEffect, useLayoutEffect, useState } from 'react';
 import {
-  SafeAreaProvider,
-  useSafeAreaInsets,
-} from 'react-native-safe-area-context';
+  Appearance,
+  Pressable,
+  StyleSheet,
+  Text,
+  useColorScheme,
+  View,
+} from 'react-native';
 
-function App() {
-  const isDarkMode = useColorScheme() === 'dark';
+// The scheme each reader shows on screen, as of its last commit.
+const shown = { hook: '', direct: '' };
+let pressedAt = 0;
 
-  return (
-    <SafeAreaProvider>
-      <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
-      <AppContent />
-    </SafeAreaProvider>
+const log = (line: string) => console.log(`[repro] ${line}`);
+
+function reportCommit(reader: string) {
+  if (shown.hook === '' || shown.direct === '') {
+    return;
+  }
+  const agreement = shown.hook === shown.direct ? 'agree' : 'DISAGREE';
+  log(
+    `${reader} committed: the screen shows useColorScheme() ${shown.hook} and Appearance.getColorScheme() ${shown.direct} (${agreement})`,
   );
 }
 
-function AppContent() {
-  const safeAreaInsets = useSafeAreaInsets();
+function HookReader() {
+  const scheme = useColorScheme() ?? 'null';
+  useLayoutEffect(() => {
+    shown.hook = scheme;
+    reportCommit('the useColorScheme() reader');
+  });
+  return <Text style={styles.line}>useColorScheme(): {scheme}</Text>;
+}
 
+function DirectReader() {
+  const [presses, setPresses] = useState(0);
+  const scheme = Appearance.getColorScheme() ?? 'null';
+  useLayoutEffect(() => {
+    shown.direct = scheme;
+    reportCommit('the Appearance.getColorScheme() reader');
+  });
+  const press = () => {
+    const next = scheme === 'dark' ? 'light' : 'dark';
+    log(
+      `press ${presses + 1}: Appearance.setColorScheme('${next}') and a state update`,
+    );
+    pressedAt = Date.now();
+    Appearance.setColorScheme(next);
+    setPresses(presses + 1);
+  };
   return (
-    <View style={styles.container}>
-      <NewAppScreen
-        templateFileName="App.tsx"
-        safeAreaInsets={safeAreaInsets}
-      />
+    <Pressable style={styles.button} onPress={press} testID="toggle">
+      <Text style={styles.line}>Appearance.getColorScheme(): {scheme}</Text>
+      <Text style={styles.line}>presses: {presses}</Text>
+    </Pressable>
+  );
+}
+
+function App() {
+  useEffect(() => {
+    const subscription = Appearance.addChangeListener(({ colorScheme }) => {
+      log(
+        `change listener: ${colorScheme ?? 'null'}, ${Date.now() - pressedAt} ms after the press`,
+      );
+    });
+    log('ready');
+    return () => subscription.remove();
+  }, []);
+  return (
+    <View style={styles.screen}>
+      <HookReader />
+      <DirectReader />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
+  screen: { flex: 1, paddingTop: 80, backgroundColor: '#888888' },
+  button: { flex: 1, padding: 24, backgroundColor: '#cccccc' },
+  line: { fontSize: 20, color: '#000000', padding: 8 },
 });
 
 export default App;
